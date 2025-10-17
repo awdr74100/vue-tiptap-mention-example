@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { SuggestionKeyDownProps } from '@tiptap/suggestion'
-import { watch, ref, computed } from 'vue'
+import { watch, ref, computed, useTemplateRef } from 'vue'
 import { useQuery } from '@tanstack/vue-query'
 
 const props = defineProps<{
@@ -50,15 +50,33 @@ const selectItem = (index: number) => {
   }
 }
 
+// const listRef = ref<HTMLElement | null>(null)
+const listRef = useTemplateRef('listRef')
+
+const scrollToSelected = () => {
+  const listElement = listRef.value
+  if (listElement) {
+    const selectedElement = listElement.children[selectedIndex.value] as HTMLElement
+    if (selectedElement) {
+      selectedElement.scrollIntoView({
+        behavior: 'smooth',
+        block: 'nearest',
+      })
+    }
+  }
+}
+
 const onKeyDown = ({ event }: SuggestionKeyDownProps) => {
   if (event.key === 'ArrowUp') {
     selectedIndex.value = (selectedIndex.value + data.value.length - 1) % data.value.length
+    scrollToSelected()
 
     return true
   }
 
   if (event.key === 'ArrowDown') {
     selectedIndex.value = (selectedIndex.value + 1) % data.value.length
+    scrollToSelected()
 
     return true
   }
@@ -98,7 +116,7 @@ watch(
 <template>
   <div class="min-w-40 bg-gray-400">
     <template v-if="data?.length">
-      <ul class="flex flex-col w-full max-h-50 overflow-auto">
+      <ul ref="listRef" class="flex flex-col w-full max-h-50 overflow-auto">
         <template v-for="(item, index) in data" :key="index">
           <li
             @click="selectItem(index)"
