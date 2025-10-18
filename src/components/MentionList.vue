@@ -1,25 +1,27 @@
 <script setup lang="ts">
 import type { SuggestionKeyDownProps } from '@tiptap/suggestion'
+import type { MentionNodeAttrs } from '@tiptap/extension-mention'
 import { watch, ref, computed, useTemplateRef } from 'vue'
 import { useQuery } from '@tanstack/vue-query'
 
 const props = defineProps<{
   items: any[]
-  command: any
+  command: (props: MentionNodeAttrs) => void
   query: string
 }>()
 
 type User = {
   id: number
+  name: string
 }
 
-const { data: getUsersResponse } = useQuery({
+const { data: getUsersResponse, isFetching: isGetUsersFetching } = useQuery({
   queryKey: ['GET_USERS', () => props.query],
   queryFn: async () => {
     const users: User[] = await fetch('https://jsonplaceholder.typicode.com/users').then((res) =>
       res.json(),
     )
-    console.log(users)
+    // console.log(users)
     return users
   },
 })
@@ -46,7 +48,7 @@ const selectItem = (index: number) => {
   const item = data.value[index]
 
   if (item) {
-    props.command({ id: item.id })
+    props.command({ id: item.id.toString(), label: item.name })
   }
 }
 
@@ -96,15 +98,15 @@ defineExpose({
 
 watch(
   () => props.query,
-  (value) => {
-    console.log('Query: ', value)
+  () => {
+    // console.log('Query: ', value)
   },
 )
 
 watch(
   data,
-  (value) => {
-    console.log(value)
+  () => {
+    // console.log(value)
     selectedIndex.value = 0
   },
   {
@@ -115,7 +117,10 @@ watch(
 
 <template>
   <div class="min-w-40 bg-gray-400">
-    <template v-if="data?.length">
+    <template v-if="isGetUsersFetching">
+      <div class="px-3 py-2">載入中...</div>
+    </template>
+    <template v-else-if="data?.length">
       <ul ref="listRef" class="flex flex-col w-full max-h-50 overflow-auto">
         <template v-for="(item, index) in data" :key="index">
           <li
@@ -125,13 +130,14 @@ watch(
               'bg-gray-500': index === selectedIndex,
             }"
           >
-            {{ item.id }}
+            {{ item.name }}
           </li>
         </template>
       </ul>
     </template>
     <template v-else>
-      <div>沒有結果</div>
+      <div class="px-3 py-2">沒有結果</div>
     </template>
+
   </div>
 </template>

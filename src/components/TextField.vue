@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { onBeforeUnmount } from 'vue'
+import { useEventListener, onClickOutside } from '@vueuse/core'
 import Document from '@tiptap/extension-document'
 import Mention from '@tiptap/extension-mention'
 import Paragraph from '@tiptap/extension-paragraph'
 import Text from '@tiptap/extension-text'
-import { useEditor, EditorContent, VueRenderer, posToDOMRect } from '@tiptap/vue-3'
+import { useEditor, EditorContent, VueRenderer, posToDOMRect, mergeAttributes } from '@tiptap/vue-3'
 import { computePosition, flip, shift } from '@floating-ui/dom'
 import type { Editor } from '@tiptap/core'
 import MentionList from '@/components/MentionList.vue'
@@ -36,75 +37,108 @@ const editor = useEditor({
       HTMLAttributes: {
         class: 'text-red-500',
       },
-      suggestion: {
-        // items: ({ query }) => {
-        //   console.log(query);
-        //   return [
-        //     'Lea Thompson',
-        //     'Cyndi Lauper',
-        //     'Tom Cruise',
-        //     'Madonna',
-        //     'Jerry Hall',
-        //     'Joan Collins',
-        //     'Winona Ryder',
-        //     'Christina Applegate',
-        //     'Lisa Bonet',
-        //   ]
-        //     .filter((item) => item.toLowerCase().startsWith(query.toLowerCase()))
-        //     // .slice(0, 5)
-        // },
-        render() {
-          let component: VueRenderer
-
-          return {
-            onStart(props) {
-              console.log('onStart', props)
-
-              component = new VueRenderer(MentionList, {
-                // using vue 2:
-                // parent: this,
-                // propsData: props,
-                // using vue 3:
-                props,
-                editor: props.editor,
-              })
-
-              if (!props.clientRect) return
-
-              component.element?.classList.add('absolute')
-
-              if (component.element) {
-                document.body.appendChild(component.element)
-              }
-
-              updatePosition(props.editor, component.element)
-            },
-
-            onUpdate(props) {
-              console.log('onUpdate', props)
-              component.updateProps(props)
-              if (!props.clientRect) return
-              updatePosition(props.editor, component.element)
-            },
-            onKeyDown(props) {
-              console.log('onKeyDown', props)
-              console.log(component)
-              if (props.event.key === 'Escape') {
-                component.destroy()
-
-                return true
-              }
-
-              return component?.ref?.onKeyDown(props)
-            },
-            onExit(props) {
-              console.log('onExit', props)
-              component?.element?.remove()
-              component?.destroy()
-            },
-          }
-        },
+      renderHTML({ options, node }) {
+        console.log(options);
+        return [
+          'a',
+          mergeAttributes({ href: '/post' }, options.HTMLAttributes),
+          `${options.HTMLAttributes['data-mention-suggestion-char']}${node.attrs.label ?? node.attrs.id}`,
+        ]
       },
+      suggestions: [
+        {
+          char: '@',
+          // items: ({ query }) => {
+          //   console.log(query);
+          //   return [
+          //     'Lea Thompson',
+          //     'Cyndi Lauper',
+          //     'Tom Cruise',
+          //     'Madonna',
+          //     'Jerry Hall',
+          //     'Joan Collins',
+          //     'Winona Ryder',
+          //     'Christina Applegate',
+          //     'Lisa Bonet',
+          //   ]
+          //     .filter((item) => item.toLowerCase().startsWith(query.toLowerCase()))
+          //     // .slice(0, 5)
+          // },
+          render() {
+            let component: VueRenderer
+            let cleanup: () => void = () => {}
+
+            return {
+              onStart(props) {
+                console.log('onStart', props)
+
+                component = new VueRenderer(MentionList, {
+                  // using vue 2:
+                  // parent: this,
+                  // propsData: props,
+                  // using vue 3:
+                  props,
+                  editor: props.editor,
+                })
+
+                if (!props.clientRect) return
+
+                component.element?.classList.add('absolute')
+
+                if (!component.element) return
+
+                document.body.appendChild(component.element)
+
+                updatePosition(props.editor, component.element)
+
+                // --- 加入 resize / scroll 監聽 ---
+                const update = () => updatePosition(props.editor, component.element)
+
+                const cleanupResizeListener = useEventListener('resize', update)
+                const cleanupScrollListener = useEventListener('scroll', update, { capture: true })
+
+                const stop = onClickOutside(component.element as HTMLElement, () => {
+                  component?.element?.remove()
+                  component?.destroy()
+                })
+
+                cleanup = () => {
+                  cleanupResizeListener()
+                  cleanupScrollListener()
+                  stop()
+                }
+              },
+
+              onUpdate(props) {
+                console.log('onUpdate', props)
+
+                component.updateProps(props)
+                if (!props.clientRect) return
+                updatePosition(props.editor, component.element)
+              },
+              onKeyDown(props) {
+                console.log('onKeyDown', props)
+                // console.log(component)
+                if (props.event.key === 'Escape') {
+                  component?.element?.remove()
+                  component.destroy()
+                  cleanup()
+
+                  return true
+                }
+
+                return component?.ref?.onKeyDown(props)
+              },
+              onExit(props) {
+                console.log('onExit', props)
+                component?.element?.remove()
+                component?.destroy()
+                cleanup()
+              },
+            }
+          },
+        },
+      ],
     }),
   ],
   editorProps: {
@@ -126,7 +160,7 @@ const onSubmit = () => {
 </script>
 
 <template>
-  <EditorContent class="border border-gray-400 rounded-xl w-full" :editor="editor" />
+  <EditorContent class="border border-gray-400 rounded-xl max-w-125 flex-1" :editor="editor" />
 
-  <button @click="onSubmit">送出</button>
+  <button @click="onSubmit" class="bg-gray-400 py-2 px-3 rounded-xl">送出</button>
 </template>

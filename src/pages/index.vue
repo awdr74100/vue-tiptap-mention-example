@@ -3,7 +3,7 @@ import TextField from '@/components/TextField.vue'
 </script>
 
 <template>
-  <div class="mx-auto min-h-dvh flex pt-100 pb-100 items-start max-w-xl">
+  <div class="mx-auto min-h-dvh flex justify-center items-center max-w-xl gap-4">
     <TextField />
   </div>
 </template>
