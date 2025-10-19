@@ -6,7 +6,7 @@ import Mention from '@tiptap/extension-mention'
 import Paragraph from '@tiptap/extension-paragraph'
 import Text from '@tiptap/extension-text'
 import { useEditor, EditorContent, VueRenderer, posToDOMRect, mergeAttributes } from '@tiptap/vue-3'
-import { computePosition, flip, shift } from '@floating-ui/dom'
+import { computePosition, flip, shift, autoUpdate } from '@floating-ui/dom'
 import type { Editor } from '@tiptap/core'
 import MentionList from '@/components/MentionList.vue'
 
@@ -16,15 +16,30 @@ const updatePosition = (editor: Editor, element: any) => {
       posToDOMRect(editor.view, editor.state.selection.from, editor.state.selection.to),
   }
 
-  computePosition(virtualElement, element, {
-    placement: 'bottom-start',
-    strategy: 'absolute',
-    middleware: [shift(), flip()],
-  }).then(({ x, y, strategy }) => {
-    element.style.width = 'max-content'
-    element.style.position = strategy
-    element.style.left = `${x}px`
-    element.style.top = `${y}px`
+  // computePosition(virtualElement, element, {
+  //   placement: 'bottom-start',
+  //   strategy: 'absolute',
+  //   middleware: [shift(), flip()],
+  // }).then(({ x, y, strategy }) => {
+  //   element.style.width = 'max-content'
+  //   element.style.position = strategy
+  //   element.style.left = `${x}px`
+  //   element.style.top = `${y}px`
+  // })
+
+  // return () => {};
+
+  return autoUpdate(virtualElement, element, () => {
+    computePosition(virtualElement, element, {
+      placement: 'bottom-start',
+      strategy: 'absolute',
+      middleware: [shift(), flip()],
+    }).then(({ x, y, strategy }) => {
+      element.style.width = 'max-content'
+      element.style.position = strategy
+      element.style.left = `${x}px`
+      element.style.top = `${y}px`
+    })
   })
 }
 
@@ -38,7 +53,7 @@ const editor = useEditor({
         class: 'text-red-500',
       },
       renderHTML({ options, node }) {
-        console.log(options);
+        console.log(options)
         return [
           'a',
           mergeAttributes({ href: '/post' }, options.HTMLAttributes),
@@ -66,7 +81,7 @@ const editor = useEditor({
           // },
           render() {
             let component: VueRenderer
-            let cleanup: () => void = () => {}
+            let cleanup: () => void;
 
             return {
               onStart(props) {
@@ -89,24 +104,24 @@ const editor = useEditor({
 
                 document.body.appendChild(component.element)
 
-                updatePosition(props.editor, component.element)
+                cleanup = updatePosition(props.editor, component.element)
 
                 // --- 加入 resize / scroll 監聽 ---
-                const update = () => updatePosition(props.editor, component.element)
+                // const update = () => updatePosition(props.editor, component.element)
 
-                const cleanupResizeListener = useEventListener('resize', update)
-                const cleanupScrollListener = useEventListener('scroll', update, { capture: true })
+                // const cleanupResizeListener = useEventListener('resize', update)
+                // const cleanupScrollListener = useEventListener('scroll', update, { capture: true })
 
-                const stop = onClickOutside(component.element as HTMLElement, () => {
-                  component?.element?.remove()
-                  component?.destroy()
-                })
+                // const stop = onClickOutside(component.element as HTMLElement, () => {
+                //   component?.element?.remove()
+                //   component?.destroy()
+                // })
 
-                cleanup = () => {
-                  cleanupResizeListener()
-                  cleanupScrollListener()
-                  stop()
-                }
+                // cleanup = () => {
+                //   cleanupResizeListener()
+                //   cleanupScrollListener()
+                //   stop()
+                // }
               },
 
               onUpdate(props) {
@@ -114,7 +129,13 @@ const editor = useEditor({
 
                 component.updateProps(props)
                 if (!props.clientRect) return
-                updatePosition(props.editor, component.element)
+
+                 if (cleanup) {
+                  console.log(123);
+                  cleanup()
+                 }
+
+                cleanup = updatePosition(props.editor, component.element)
               },
               onKeyDown(props) {
                 console.log('onKeyDown', props)
