@@ -10,6 +10,7 @@ import { computePosition, flip, shift, autoUpdate } from '@floating-ui/dom'
 // import HardBreak from '@tiptap/extension-hard-break'
 import type { Editor } from '@tiptap/core'
 import MentionList from '@/components/MentionList.vue'
+import { nanoid } from 'nanoid'
 
 const updatePosition = (editor: Editor, element: any) => {
   const virtualElement = {
@@ -54,15 +55,15 @@ const editor = useEditor({
     Text,
     // HardBreak,
     Mention.configure({
-      HTMLAttributes: {
-        class: 'text-red-500',
-      },
+      HTMLAttributes: {},
       renderHTML({ node, options }) {
         // console.log(node)
         // console.log(options)
         return [
           'span',
-          mergeAttributes({}, options.HTMLAttributes),
+          mergeAttributes(options.HTMLAttributes, {
+            class: 'text-blue-500',
+          }),
           `${options.HTMLAttributes['data-mention-suggestion-char']}${node.attrs.label}`,
         ]
       },
@@ -395,91 +396,191 @@ function parseTextToNodes(text: string, options: ParseOptions) {
 onMounted(() => {
   const taggerUsers = [{ id: 'whfwefwf', nickname: 'Eric' }]
   const hashtags = ['美食']
-  const text = '你好啊 \n 123 \n 你好啊 @[whfwefwf]\n#美食 #ddd'
+  const text = '你好啊 \n@Eric 123\n 你好啊 @[whfwefwf]\n  #美食 \n1#ddd2'
 
-  const convertToHTML = (str: string) => {
-    // 按換行分段
+  // const taggerUsers = [{ id: 'whfwefwf', nickname: 'eric' }];
+  // const hashtags = ['美食', 'ddd2'];
+
+  // const text=  '你好啊 \n@Eric 123\n 你好啊 @[whfwefwf]\n  #美食 \n1#ddd2'
+
+  const convertToDoc = (str: string) => {
     const paragraphs = str.split(/\n/)
+    const content: any[] = []
 
-    return paragraphs
-      .map((line) => {
-        let htmlLine = line
+    for (const line of paragraphs) {
+      const children: any[] = []
 
-        // 處理 mention: @[id] → <a class="text-red-500" ...>@nickname</a>
-        htmlLine = htmlLine.replace(/@\[([^\]]+)\]/g, (_, id) => {
+      // 將整行依序掃描 mention / hashtag
+      const regex = /(@\[[^\]]+\]|#\S+)/g
+      let lastIndex = 0
+      let match: RegExpExecArray | null
+
+      while ((match = regex.exec(line)) !== null) {
+        const matchText = match[0]
+        const start = match.index
+
+        // 先加前面的純文字
+        if (start > lastIndex) {
+          children.push({ type: 'text', text: line.slice(lastIndex, start) })
+        }
+
+        // 判斷是 mention 還是 hashtag
+        if (matchText.startsWith('@[')) {
+          const id = matchText.slice(2, -1)
           const user = taggerUsers.find((u) => u.id === id)
-          if (!user) return `@[${id}]`
-          return `<span class="text-red-500" data-type="mention" data-id="${user.id}" data-label="${user.nickname}" data-mention-suggestion-char="@">@${user.nickname}</span>`
-        })
+          if (user) {
+            children.push({
+              type: 'mention',
+              attrs: { id: user.id, label: user.nickname, mentionSuggestionChar: '@' },
+            })
+          } else {
+            // children.push({
+            //   type: 'mention',
 
-        // 處理 hashtag: #tag → <span class="hashtag">#tag</span>
-        htmlLine = htmlLine.replace(/#(\S+)/g, (_, tag) => {
-          console.log(!hashtags.includes(tag))
-          if (!hashtags.includes(tag)) return `#${tag}`
-          return `<span class="text-red-500" data-type="mention" data-id="${tag}" data-label="${tag}" data-mention-suggestion-char="#">#${tag}</span>`
-        })
+            //   attrs: { id: '', label: id, mentionSuggestionChar: '@' },
+            // })
+            // 不在名單內，維持純文字顯示
+            children.push({ type: 'text', text: matchText })
+          }
+        } else if (matchText.startsWith('#')) {
+          const tag = matchText.slice(1)
+          if (hashtags.includes(tag)) {
+            children.push({
+              type: 'mention', // or custom hashtag node
+              attrs: { id: tag, label: tag, mentionSuggestionChar: '#' },
+            })
+          } else {
+            children.push({
+              type: 'mention',
+              attrs: { id: tag, label: tag, mentionSuggestionChar: '#' },
+            })
+            // children.push({
+            //   type: 'mention',
 
-        // 包成 p
-        return `<p>${htmlLine}</p>`
+            //   attrs: { id: '', label: tag, mentionSuggestionChar: '#' },
+            // })
+            // 不在名單內，維持純文字
+            // children.push({ type: 'text', text: matchText })
+          }
+        }
+
+        lastIndex = match.index + matchText.length
+      }
+
+      // 剩下的文字
+      if (lastIndex < line.length) {
+        children.push({ type: 'text', text: line.slice(lastIndex) })
+      }
+
+      // 加入段落
+      content.push({
+        type: 'paragraph',
+        content: children.length ? children : [{ type: 'text', text: '' }],
       })
-      .join('')
+    }
+
+    return {
+      type: 'doc',
+      content,
+    }
   }
 
-  console.log(convertToHTML(text))
+  const doc = convertToDoc(text)
+  console.log(JSON.stringify(doc))
 
-  editor.value?.commands.setContent(convertToHTML(text), { parseOptions: { preserveWhitespace: 'full' } })
-
-  // 分段
-  // const lines = text.split(/\n/)
-
-  // const content = {
-  //   type: 'doc',
-  //   content: lines.map((line) => {
-  //     // 每一段落
-  //     const children = []
-
-  //     let remaining = line
-
-  //     // 處理 @mention
-  //     taggerUsers.forEach((u) => {
-  //       const idx = remaining.indexOf(`@[${u.id}]`)
-  //       if (idx >= 0) {
-  //         if (idx > 0) {
-  //           children.push({ type: 'text', text: remaining.slice(0, idx) })
-  //         }
-  //         children.push({
-  //           type: 'mention',
-  //           attrs: { id: u.id, label: u.nickname },
-  //         })
-  //         remaining = remaining.slice(idx + `@[${u.id}]`.length)
-  //       }
-  //     })
-
-  //     // 處理 hashtag
-  //     hashtags.forEach((tag) => {
-  //       const idx = remaining.indexOf(`#${tag}`)
-  //       if (idx >= 0) {
-  //         if (idx > 0) {
-  //           children.push({ type: 'text', text: remaining.slice(0, idx) })
-  //         }
-  //         children.push({
-  //           type: 'mention',
-  //           attrs: { id: tag, label: `#${tag}` },
-  //         })
-  //         remaining = remaining.slice(idx + `#${tag}`.length)
-  //       }
-  //     })
-
-  //     if (remaining.length) {
-  //       children.push({ type: 'text', text: remaining })
-  //     }
-
-  //     return { type: 'paragraph', content: children }
-  //   }),
-  // }
-
-  // editor.value?.commands.setContent(content)
+  editor.value?.commands.setContent(doc)
 })
+
+// onMounted(() => {
+//   const taggerUsers = [{ id: 'whfwefwf', nickname: 'Eric' }]
+//   const hashtags = ['美食']
+//   const text = '你好啊 \n 123 \n 你好啊 @[whfwefwf]\n#美食 @dwdq #ddd'
+
+//   const convertToHTML = (str: string) => {
+//     // 按換行分段
+//     const paragraphs = str.split(/\n/)
+
+//     console.log(paragraphs);
+
+//     return paragraphs
+//       .map((line) => {
+//         let htmlLine = line
+
+//         // 處理 mention: @[id] → <a class="text-red-500" ...>@nickname</a>
+//         htmlLine = htmlLine.replace(/@\[([^\]]+)\]/g, (_, id) => {
+//           const user = taggerUsers.find((u) => u.id === id)
+//           if (!user) return `@[${id}]`
+//           return `<span class="text-red-500" data-type="mention" data-id="${user.id}" data-label="${user.nickname}" data-mention-suggestion-char="@">@${user.nickname}</span>`
+//         })
+
+//         // 處理 hashtag: #tag → <span class="hashtag">#tag</span>
+//         htmlLine = htmlLine.replace(/#(\S+)/g, (_, tag) => {
+//           console.log(!hashtags.includes(tag))
+//           if (!hashtags.includes(tag)) return `#${tag}`
+//           return `<span class="text-red-500" data-type="mention" data-id="${tag}" data-label="${tag}" data-mention-suggestion-char="#">#${tag}</span>`
+//         })
+
+//         // 包成 p
+//         return `<p>${htmlLine}</p>`
+//       })
+//       .join('')
+//   }
+
+//   console.log(convertToHTML(text))
+
+//   editor.value?.commands.setContent(convertToHTML(text), { parseOptions: { preserveWhitespace: 'full' } })
+
+//   // 分段
+//   // const lines = text.split(/\n/)
+
+//   // const content = {
+//   //   type: 'doc',
+//   //   content: lines.map((line) => {
+//   //     // 每一段落
+//   //     const children = []
+
+//   //     let remaining = line
+
+//   //     // 處理 @mention
+//   //     taggerUsers.forEach((u) => {
+//   //       const idx = remaining.indexOf(`@[${u.id}]`)
+//   //       if (idx >= 0) {
+//   //         if (idx > 0) {
+//   //           children.push({ type: 'text', text: remaining.slice(0, idx) })
+//   //         }
+//   //         children.push({
+//   //           type: 'mention',
+//   //           attrs: { id: u.id, label: u.nickname },
+//   //         })
+//   //         remaining = remaining.slice(idx + `@[${u.id}]`.length)
+//   //       }
+//   //     })
+
+//   //     // 處理 hashtag
+//   //     hashtags.forEach((tag) => {
+//   //       const idx = remaining.indexOf(`#${tag}`)
+//   //       if (idx >= 0) {
+//   //         if (idx > 0) {
+//   //           children.push({ type: 'text', text: remaining.slice(0, idx) })
+//   //         }
+//   //         children.push({
+//   //           type: 'mention',
+//   //           attrs: { id: tag, label: `#${tag}` },
+//   //         })
+//   //         remaining = remaining.slice(idx + `#${tag}`.length)
+//   //       }
+//   //     })
+
+//   //     if (remaining.length) {
+//   //       children.push({ type: 'text', text: remaining })
+//   //     }
+
+//   //     return { type: 'paragraph', content: children }
+//   //   }),
+//   // }
+
+//   // editor.value?.commands.setContent(content)
+// })
 
 // onMounted(() => {
 //   const taggerUsers = [{ id: 'whfwefwf', nickname: 'Eric' }]
@@ -546,45 +647,88 @@ onBeforeUnmount(() => {
   editor.value?.destroy()
 })
 
-const onSubmit = () => {
-  // console.log(editor.value?.getJSON())
-  // console.log(JSON.stringify(editor.value?.getHTML()))
-  // console.log(JSON.stringify('Hello\nWorld'))
-  // console.log(editor.value?.getText())
-  // console.log(JSON.stringify(editor.value?.getHTML()))
-  const htmlString = editor.value?.getHTML() ?? ''
+function parseEditorContent(html: string) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(html, 'text/html');
 
-  const container = document.createElement('div')
-  container.innerHTML = htmlString
+  const taggedUsers: { id: string; label: string }[] = [];
+  const hashtags: string[] = [];
 
-  // 收集 taggedUser 和 hashtags
-  const taggedUser: { id: string; label: string }[] = []
-  const hashtags: { id: string; label: string }[] = []
-
-  container.querySelectorAll('span[data-type="mention"]').forEach((span) => {
-    const char = span.getAttribute('data-mention-suggestion-char')
-    const id = span.getAttribute('data-id')
-    const label = span.getAttribute('data-label')
-
-    // 只有 id 與 label 都存在才加入陣列
-    if (id && label) {
-      if (char === '@') {
-        taggedUser.push({ id, label })
-      } else if (char === '#') {
-        hashtags.push({ id, label })
+  // 遞迴處理每個節點
+  function traverse(node: Node): string {
+    if (node.nodeType === Node.TEXT_NODE) {
+      const text = node.textContent || '';
+      // 抓出所有 #xxx 並記錄
+      const hashtagMatches = text.match(/#[\p{L}\p{N}_-]+/gu);
+      if (hashtagMatches) {
+        hashtagMatches.forEach(tag => {
+          hashtags.push(tag);
+        });
       }
+      return text;
     }
-  })
 
-  // 將 HTML 轉成文字，段落用 \n 分隔
-  const text = Array.from(container.childNodes)
-    .map((node) => node.textContent)
-    .filter((line) => line?.length)
-    .join('\n')
+    if (node.nodeType === Node.ELEMENT_NODE) {
+      const el = node as HTMLElement;
 
-  console.log('text:', JSON.stringify(text))
-  console.log('taggedUser:', taggedUser)
-  console.log('hashtags:', hashtags)
+      // 處理 mention span
+      if (el.dataset.type === 'mention' && el.dataset.mentionSuggestionChar === '@') {
+        const id = el.dataset.id ?? '';
+        const label = el.dataset.label ?? '';
+        if (id && label) {
+          taggedUsers.push({ id, label });
+          return `@[${id}]`;
+        }
+      }
+
+      // 處理 hashtag mention，但保留原文字不替代
+      if (el.dataset.type === 'mention' && el.dataset.mentionSuggestionChar === '#') {
+        const label = el.dataset.label ?? '';
+        if (label.startsWith('#')) {
+          hashtags.push(label);
+        } else {
+          hashtags.push(`#${label}`);
+        }
+        return el.textContent || '';
+      }
+
+      // 處理段落、換行
+      if (el.tagName === 'P' || el.tagName === 'DIV' || el.tagName === 'BR') {
+        const inner = Array.from(el.childNodes).map(traverse).join('');
+        // 換行
+        return inner + (el.tagName === 'BR' ? '\n' : '\n');
+      }
+
+      // 遞迴處理其他節點
+      return Array.from(el.childNodes).map(traverse).join('');
+    }
+
+    return '';
+  }
+
+  const plainText = traverse(doc.body).trim();
+
+  return {
+    text: plainText,
+    taggedUsers,
+    hashtags,
+  };
+}
+
+const onSubmit = () => {
+  const htmlString = editor.value?.getHTML() ?? '';
+
+  /**
+   * <p>你好啊 #123</p><p>@Eric 123</p><p> 你好啊 <span data-type="mention" data-id="whfwefwf" data-label="Eric" data-mention-suggestion-char="@" class="text-blue-500">@Eric</span></p><p>  <span data-type="mention" data-id="美食" data-label="美食" data-mention-suggestion-char="#" class="text-blue-500">#美食</span> </p><p>1<span data-type="mention" data-id="ddd2" data-label="ddd2" data-mention-suggestion-char="#" class="text-blue-500">#ddd2</span></p>
+   */
+  console.log(htmlString);
+
+  console.log(parseEditorContent(htmlString))
+
+
+
+  // const taggedUser: { id: string; label: string }[] = []
+  // const hashtags: string[] = [];
 }
 </script>
 
